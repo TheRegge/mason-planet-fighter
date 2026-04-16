@@ -1,18 +1,20 @@
 import * as Phaser from 'phaser'
+import { DEFAULT_WEAPON_ID, WEAPONS } from '../config/weapons'
+import type { WeaponConfig, WeaponId } from '../types/weapon'
 
-// Graybox tuning (Milestone 1 only — will be replaced by config later).
+// To test a different weapon, change this to 'babyTrident' | 'flyingStar' | 'mace'.
+const ACTIVE_WEAPON_ID: WeaponId = 'flyingStar'//DEFAULT_WEAPON_ID
+
+// Graybox tuning for non-weapon behavior.
 const PLAYER_MAX_HEALTH = 5
 const BOSS_MAX_HEALTH = 10
 const PLAYER_SPEED = 240
 const JUMP_VELOCITY = -520
-const ATTACK_COOLDOWN_MS = 400
-const ATTACK_DAMAGE = 1
 const CONTACT_DAMAGE = 1
 const INVULN_MS = 800
 const ATTACK_FLASH_MS = 120
-const ATTACK_OFFSET = 38
-const ATTACK_WIDTH = 40
-const ATTACK_HEIGHT = 30
+const MELEE_HITBOX_HEIGHT = 30
+const PROJECTILE_LIFETIME_MS = 1500
 
 export class BattleScene extends Phaser.Scene {
   private playerRect!: Phaser.GameObjects.Rectangle
@@ -32,12 +34,17 @@ export class BattleScene extends Phaser.Scene {
   private facingRight = true
   private battleOver = false
 
-  constructor() {
+  private activeWeapon!: WeaponConfig
+  private projectiles!: Phaser.Physics.Arcade.Group
+
+  constructor () {
     super('Battle')
   }
 
   create(): void {
     const { width, height } = this.scale
+
+    this.activeWeapon = WEAPONS[ACTIVE_WEAPON_ID]
 
     this.physics.world.setBounds(0, 0, width, height)
 
@@ -83,6 +90,15 @@ export class BattleScene extends Phaser.Scene {
     this.physics.add.collider(this.bossRect, ground)
     this.physics.add.overlap(this.playerRect, this.bossRect, () => this.onContact())
 
+    // Projectiles (used by ranged weapons).
+    // Note: Phaser's overlap callback is invoked as (sprite, groupMember) regardless
+    // of argument order to add.overlap, so the projectile is the SECOND argument.
+    this.projectiles = this.physics.add.group({ allowGravity: false })
+    this.physics.add.overlap(this.projectiles, this.bossRect, (_boss, projObj) => {
+      (projObj as Phaser.GameObjects.GameObject).destroy()
+      this.damageBoss(this.activeWeapon.damage)
+    })
+
     // Input.
     this.cursors = this.input.keyboard!.createCursorKeys()
 
@@ -95,7 +111,12 @@ export class BattleScene extends Phaser.Scene {
     this.playerHealthText = this.add.text(16, 12, '', textStyle)
     this.bossHealthText = this.add.text(width - 16, 12, '', textStyle).setOrigin(1, 0)
     this.add
-      .text(width / 2, 12, 'Arrows: move  |  Up: jump  |  Space: attack', textStyle)
+      .text(
+        width / 2,
+        12,
+        `Arrows: move  |  Up: jump  |  Space: attack  |  Weapon: ${this.activeWeapon.name}`,
+        textStyle,
+      )
       .setOrigin(0.5, 0)
     this.updateHealthText()
   }
@@ -123,7 +144,7 @@ export class BattleScene extends Phaser.Scene {
     if (
       this.cursors.space &&
       Phaser.Input.Keyboard.JustDown(this.cursors.space) &&
-      this.time.now - this.lastAttackTime >= ATTACK_COOLDOWN_MS
+      this.time.now - this.lastAttackTime >= this.activeWeapon.cooldownMs
     ) {
       this.performAttack()
       this.lastAttackTime = this.time.now
@@ -131,9 +152,18 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private performAttack(): void {
-    const x = this.playerRect.x + (this.facingRight ? ATTACK_OFFSET : -ATTACK_OFFSET)
+    if (this.activeWeapon.type === 'projectile') {
+      this.spawnProjectile()
+    } else {
+      this.performMeleeSwing()
+    }
+  }
+
+  private performMeleeSwing(): void {
+    const w = this.activeWeapon
+    const x = this.playerRect.x + (this.facingRight ? w.range : -w.range)
     const y = this.playerRect.y
-    const hitbox = this.add.rectangle(x, y, ATTACK_WIDTH, ATTACK_HEIGHT, 0xffeb3b, 0.7)
+    const hitbox = this.add.rectangle(x, y, w.range, MELEE_HITBOX_HEIGHT, w.color, 0.7)
 
     if (
       Phaser.Geom.Intersects.RectangleToRectangle(
@@ -141,10 +171,35 @@ export class BattleScene extends Phaser.Scene {
         this.bossRect.getBounds(),
       )
     ) {
-      this.damageBoss(ATTACK_DAMAGE)
+      this.damageBoss(w.damage)
     }
 
     this.time.delayedCall(ATTACK_FLASH_MS, () => hitbox.destroy())
+  }
+
+  private spawnProjectile(): void {
+    const w = this.activeWeapon
+    const speed = w.projectileSpeed ?? 0
+    const offsetX = this.facingRight ? w.range : -w.range
+    const proj = this.add.rectangle(
+      this.playerRect.x + offsetX,
+      this.playerRect.y,
+      w.range,
+      w.range,
+      w.color,
+    )
+    this.physics.add.existing(proj)
+    // Add to the group BEFORE setting velocity — Phaser's Arcade Group applies
+    // its `defaults` (including velocityX/Y = 0) to the body on add, which would
+    // otherwise clobber any velocity set first.
+    this.projectiles.add(proj)
+    const body = proj.body as Phaser.Physics.Arcade.Body
+    body.setSize(w.range, w.range)
+    body.setVelocityX(this.facingRight ? speed : -speed)
+
+    this.time.delayedCall(PROJECTILE_LIFETIME_MS, () => {
+      if (proj.active) proj.destroy()
+    })
   }
 
   private onContact(): void {
