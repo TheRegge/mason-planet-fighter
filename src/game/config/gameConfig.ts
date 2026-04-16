@@ -2,6 +2,7 @@ import * as Phaser from 'phaser'
 import { BootScene } from '../scenes/BootScene'
 import { PreloadScene } from '../scenes/PreloadScene'
 import { TitleScene } from '../scenes/TitleScene'
+import { BattleScene } from '../scenes/BattleScene'
 
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -16,9 +17,9 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { x: 0, y: 0 },
+      gravity: { x: 0, y: 1200 },
       debug: false,
     },
   },
-  scene: [BootScene, PreloadScene, TitleScene],
+  scene: [BootScene, PreloadScene, TitleScene, BattleScene],
 }
