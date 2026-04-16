@@ -16,6 +16,26 @@ const ATTACK_FLASH_MS = 120
 const MELEE_HITBOX_HEIGHT = 30
 const PROJECTILE_LIFETIME_MS = 1500
 
+// Spider Prince (first real boss, graybox).
+const BOSS_COLOR = 0x6b2fbb
+const TELEGRAPH_COLOR = 0xffe066
+const BOSS_WIDTH = 56
+const BOSS_HEIGHT = 64
+const BOSS_IDLE_MS = 800
+const BOSS_TELEGRAPH_MS = 450
+const BOSS_RECOVERY_MS = 500
+const BOSS_LEAP_VX = 260
+const BOSS_LEAP_VY = -520
+const BOSS_LEAP_MAX_MS = 900
+const WEB_SPEED = 260
+const WEB_DAMAGE = 1
+const WEB_LIFETIME_MS = 2200
+const WEB_SIZE = 18
+const WEB_COLOR = 0xeeeeff
+
+type BossState = 'idle' | 'telegraph' | 'attack' | 'recovery'
+type BossAttack = 'web' | 'leap'
+
 export class BattleScene extends Phaser.Scene {
   private playerRect!: Phaser.GameObjects.Rectangle
   private playerBody!: Phaser.Physics.Arcade.Body
@@ -36,6 +56,14 @@ export class BattleScene extends Phaser.Scene {
 
   private activeWeapon!: WeaponConfig
   private projectiles!: Phaser.Physics.Arcade.Group
+
+  // Spider Prince state machine.
+  private bossState: BossState = 'idle'
+  private bossStateUntil = 0
+  private bossAttackStart = 0
+  private currentAttack: BossAttack = 'web'
+  private nextAttack: BossAttack = 'web'
+  private bossProjectiles!: Phaser.Physics.Arcade.Group
 
   constructor () {
     super('Battle')
@@ -72,18 +100,19 @@ export class BattleScene extends Phaser.Scene {
     this.playerBody.setSize(30, 50)
     this.playerBody.setCollideWorldBounds(true)
 
-    // Dummy boss.
+    // Spider Prince (first real boss, graybox rectangle).
     this.bossRect = this.add.rectangle(
       width * 0.75,
-      height - groundHeight - 60,
-      60,
-      80,
-      0xff6b6b,
+      height - groundHeight - BOSS_HEIGHT / 2 - 10,
+      BOSS_WIDTH,
+      BOSS_HEIGHT,
+      BOSS_COLOR,
     )
     this.physics.add.existing(this.bossRect)
     this.bossBody = this.bossRect.body as Phaser.Physics.Arcade.Body
-    this.bossBody.setSize(60, 80)
+    this.bossBody.setSize(BOSS_WIDTH, BOSS_HEIGHT)
     this.bossBody.setCollideWorldBounds(true)
+    this.enterBossState('idle')
 
     // Physics relations.
     this.physics.add.collider(this.playerRect, ground)
@@ -99,6 +128,15 @@ export class BattleScene extends Phaser.Scene {
       this.damageBoss(this.activeWeapon.damage)
     })
 
+    // Spider Prince web projectiles.
+    this.bossProjectiles = this.physics.add.group({ allowGravity: false })
+    this.physics.add.overlap(this.playerRect, this.bossProjectiles, (_player, web) => {
+      (web as Phaser.GameObjects.GameObject).destroy()
+      if (!this.battleOver && this.time.now >= this.invulnerableUntil) {
+        this.damagePlayer(WEB_DAMAGE)
+      }
+    })
+
     // Input.
     this.cursors = this.input.keyboard!.createCursorKeys()
 
@@ -110,6 +148,13 @@ export class BattleScene extends Phaser.Scene {
     }
     this.playerHealthText = this.add.text(16, 12, '', textStyle)
     this.bossHealthText = this.add.text(width - 16, 12, '', textStyle).setOrigin(1, 0)
+    this.add
+      .text(width - 16, 38, 'Boss: Spider Prince', {
+        ...textStyle,
+        fontSize: '14px',
+        color: '#c9b6ff',
+      })
+      .setOrigin(1, 0)
     this.add
       .text(
         width / 2,
@@ -123,6 +168,8 @@ export class BattleScene extends Phaser.Scene {
 
   update(): void {
     if (this.battleOver) return
+
+    this.updateBoss()
 
     // Horizontal movement.
     if (this.cursors.left?.isDown) {
@@ -226,9 +273,118 @@ export class BattleScene extends Phaser.Scene {
     this.bossHealthText.setText(`Boss HP: ${this.bossHealth}/${BOSS_MAX_HEALTH}`)
   }
 
+  // --- Spider Prince AI -----------------------------------------------
+
+  private updateBoss(): void {
+    const now = this.time.now
+
+    switch (this.bossState) {
+      case 'idle': {
+        // Stand still, wait, then telegraph.
+        this.bossBody.setVelocityX(0)
+        if (now >= this.bossStateUntil) {
+          this.currentAttack = this.nextAttack
+          this.nextAttack = this.nextAttack === 'web' ? 'leap' : 'web'
+          this.enterBossState('telegraph')
+        }
+        break
+      }
+
+      case 'telegraph': {
+        // Pause and flash color. No movement.
+        this.bossBody.setVelocityX(0)
+        if (now >= this.bossStateUntil) {
+          this.executeBossAttack()
+        }
+        break
+      }
+
+      case 'attack': {
+        if (this.currentAttack === 'web') {
+          // Web is fire-and-forget; move straight into recovery.
+          this.enterBossState('recovery')
+        } else {
+          // Leap: wait until grounded (after going up) or safety timeout.
+          const airborneLongEnough = now - this.bossAttackStart > 120
+          const landed = airborneLongEnough && this.bossBody.blocked.down
+          const timedOut = now - this.bossAttackStart > BOSS_LEAP_MAX_MS
+          if (landed || timedOut) {
+            this.bossBody.setVelocityX(0)
+            this.enterBossState('recovery')
+          }
+        }
+        break
+      }
+
+      case 'recovery': {
+        this.bossBody.setVelocityX(0)
+        if (now >= this.bossStateUntil) {
+          this.enterBossState('idle')
+        }
+        break
+      }
+    }
+  }
+
+  private enterBossState(state: BossState): void {
+    this.bossState = state
+    const now = this.time.now
+    switch (state) {
+      case 'idle':
+        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossStateUntil = now + BOSS_IDLE_MS
+        break
+      case 'telegraph':
+        this.bossRect.setFillStyle(TELEGRAPH_COLOR)
+        this.bossStateUntil = now + BOSS_TELEGRAPH_MS
+        break
+      case 'attack':
+        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossAttackStart = now
+        break
+      case 'recovery':
+        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossStateUntil = now + BOSS_RECOVERY_MS
+        break
+    }
+  }
+
+  private executeBossAttack(): void {
+    if (this.currentAttack === 'web') {
+      this.spawnWeb()
+    } else {
+      this.doLeap()
+    }
+    this.enterBossState('attack')
+  }
+
+  private spawnWeb(): void {
+    const dir = this.playerRect.x < this.bossRect.x ? -1 : 1
+    const spawnX = this.bossRect.x + dir * (BOSS_WIDTH / 2 + WEB_SIZE / 2 + 2)
+    const web = this.add.rectangle(spawnX, this.bossRect.y, WEB_SIZE, WEB_SIZE, WEB_COLOR)
+    this.physics.add.existing(web)
+    // Add to group BEFORE setting velocity (group defaults would clobber it).
+    this.bossProjectiles.add(web)
+    const body = web.body as Phaser.Physics.Arcade.Body
+    body.setSize(WEB_SIZE, WEB_SIZE)
+    body.setVelocityX(dir * WEB_SPEED)
+
+    this.time.delayedCall(WEB_LIFETIME_MS, () => {
+      if (web.active) web.destroy()
+    })
+  }
+
+  private doLeap(): void {
+    const dir = this.playerRect.x < this.bossRect.x ? -1 : 1
+    this.bossBody.setVelocity(dir * BOSS_LEAP_VX, BOSS_LEAP_VY)
+  }
+
   private endBattle(won: boolean): void {
     this.battleOver = true
     this.playerBody.setVelocity(0, 0)
+    this.bossBody.setVelocity(0, 0)
+    this.bossState = 'recovery'
+    this.bossProjectiles.getChildren().forEach((child) => child.destroy())
     const message = won ? 'WIN' : 'LOSE'
     console.log(message)
 
