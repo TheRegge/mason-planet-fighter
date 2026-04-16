@@ -8,31 +8,33 @@ This file provides guidance to Claude Code when working in this repository.
 
 <!-- Example: Scaffold Review / Graybox Combat / First Boss / Progression -->
 
-- Phase:
+- Phase: Graybox Combat (Milestone 1 complete)
 
 ### Last Completed
 
 <!-- Brief, factual description of what was just finished -->
 
--
+- Graybox `BattleScene`: player move/jump, basic melee attack, dummy boss with contact damage, 5/10 HP, i-frames, WIN/LOSE endings. Title → Battle wired via SPACE.
 
 ### Current Focus
 
 <!-- What is actively being worked on right now -->
 
--
+- Awaiting playtest confirmation of graybox fun factor before proceeding.
 
 ### Next Step
 
 <!-- Smallest correct next action (should match dev bible) -->
 
--
+- Milestone 2 / Implementation Plan Prompt 3: refactor combat to config-driven weapons (Baby Trident, Flying Star, Mace) with typed `WeaponConfig`.
 
 ### Notes / Decisions
 
 <!-- Optional: important decisions or constraints discovered -->
 
--
+- Arcade gravity is global (`y: 1200`) in `gameConfig`.
+- Do NOT call `setImmovable(true)` on dynamic bosses — it prevents separation against static ground colliders and the body falls through to world bounds. Use `overlap` (not `collider`) for player/boss contact damage if the boss shouldn't be pushed.
+- Phaser 4 `GameObjects.Rectangle` physics: explicitly call `body.setSize(w, h)` after `physics.add.existing(...)` to guarantee body matches visual.
 
 ## Project identity
 
