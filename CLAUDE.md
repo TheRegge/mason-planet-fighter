@@ -8,25 +8,25 @@ This file provides guidance to Claude Code when working in this repository.
 
 <!-- Example: Scaffold Review / Graybox Combat / First Boss / Progression -->
 
-- Phase: Graybox Combat (Milestone 1 complete)
+- Phase: Menu Flow + Run State (Milestone 3 in progress)
 
 ### Last Completed
 
 <!-- Brief, factual description of what was just finished -->
 
-- Graybox `BattleScene`: player move/jump, basic melee attack, dummy boss with contact damage, 5/10 HP, i-frames, WIN/LOSE endings. Title → Battle wired via SPACE.
+- Menu flow: Title → PlanetSelect (Earth unlocked, Mars locked) → WeaponSelect (Baby Trident / Flying Star / Mace) → Battle → Result (SPACE retries, ESC returns to PlanetSelect). Shared in-memory `runState` singleton stores planetId, weaponId, unlockedPlanets, lastResult. `BattleScene` now reads weapon from `runState` and transitions to `Result` on WIN/LOSE.
 
 ### Current Focus
 
 <!-- What is actively being worked on right now -->
 
-- Awaiting playtest confirmation of graybox fun factor before proceeding.
+- Playtest end-to-end menu flow; verify Retry preserves weapon and Mars tile stays visibly locked.
 
 ### Next Step
 
 <!-- Smallest correct next action (should match dev bible) -->
 
-- Milestone 2 / Implementation Plan Prompt 3: refactor combat to config-driven weapons (Baby Trident, Flying Star, Mace) with typed `WeaponConfig`.
+- Milestone 4: unlock Mars after first Earth win (mutate `runState.unlockedPlanets` on WIN in `BattleScene.endBattle`).
 
 ### Notes / Decisions
 
@@ -35,6 +35,8 @@ This file provides guidance to Claude Code when working in this repository.
 - Arcade gravity is global (`y: 1200`) in `gameConfig`.
 - Do NOT call `setImmovable(true)` on dynamic bosses — it prevents separation against static ground colliders and the body falls through to world bounds. Use `overlap` (not `collider`) for player/boss contact damage if the boss shouldn't be pushed.
 - Phaser 4 `GameObjects.Rectangle` physics: explicitly call `body.setSize(w, h)` after `physics.add.existing(...)` to guarantee body matches visual.
+- `runState` is a simple exported singleton object (`src/game/state/runState.ts`). No persistence, no event bus — scenes read/write directly. Keep minimal until there is a real reason to grow it.
+- Phaser reuses the scene instance on `scene.start()` — class-field initializers run once at construction. `BattleScene.create()` resets per-run fields (HP, `battleOver`, boss state, timers) so Retry starts clean.
 
 ## Project identity
 
