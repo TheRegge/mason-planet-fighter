@@ -17,7 +17,7 @@ export interface RunState {
 export const runState: RunState = {
   planetId: 'earth',
   weaponId: DEFAULT_WEAPON_ID,
-  unlockedPlanets: ['earth'],
+  unlockedPlanets: ['earth', 'moon', 'mars', 'jupiter'],
   lastResult: null,
 }
 

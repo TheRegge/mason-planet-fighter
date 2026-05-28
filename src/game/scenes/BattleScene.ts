@@ -2,6 +2,7 @@ import * as Phaser from 'phaser'
 import { DEFAULT_WEAPON_ID, WEAPONS } from '../config/weapons'
 import type { WeaponConfig } from '../types/weapon'
 import { runState, setLastResult } from '../state/runState'
+import { PLANETS } from '../config/planets'
 
 // Graybox tuning for non-weapon behavior.
 const PLAYER_MAX_HEALTH = 5
@@ -91,6 +92,13 @@ export class BattleScene extends Phaser.Scene {
     this.activeWeapon = WEAPONS[runState.weaponId ?? DEFAULT_WEAPON_ID]
 
     this.physics.world.setBounds(0, 0, width, height)
+
+    // Planet background (purely visual, behind everything).
+    const planet = PLANETS[runState.planetId]
+    this.add
+      .image(width / 2, height / 2, planet.backgroundKey)
+      .setDisplaySize(width, height)
+      .setDepth(-10)
 
     // Ground (static).
     const groundHeight = 40

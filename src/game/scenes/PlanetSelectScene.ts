@@ -3,9 +3,9 @@ import { PLANETS, PLANET_ORDER } from '../config/planets'
 import type { PlanetId } from '../config/planets'
 import { isPlanetUnlocked, setPlanet } from '../state/runState'
 
-const TILE_WIDTH = 240
-const TILE_HEIGHT = 260
-const TILE_GAP = 48
+const TILE_WIDTH = 180
+const TILE_HEIGHT = 240
+const TILE_GAP = 24
 const LOCKED_COLOR = 0x555566
 const LOCKED_TEXT = '#888888'
 
