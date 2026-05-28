@@ -1,9 +1,7 @@
 import * as Phaser from 'phaser'
 import { DEFAULT_WEAPON_ID, WEAPONS } from '../config/weapons'
-import type { WeaponConfig, WeaponId } from '../types/weapon'
-
-// To test a different weapon, change this to 'babyTrident' | 'flyingStar' | 'mace'.
-const ACTIVE_WEAPON_ID: WeaponId = 'flyingStar'//DEFAULT_WEAPON_ID
+import type { WeaponConfig } from '../types/weapon'
+import { runState, setLastResult } from '../state/runState'
 
 // Graybox tuning for non-weapon behavior.
 const PLAYER_MAX_HEALTH = 5
@@ -72,7 +70,22 @@ export class BattleScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale
 
-    this.activeWeapon = WEAPONS[ACTIVE_WEAPON_ID]
+    // Per-run reset: Phaser reuses the scene instance on scene.start(),
+    // so class-field initializers only run once. Reset mutable state here
+    // so Retry and repeated runs start clean.
+    this.playerHealth = PLAYER_MAX_HEALTH
+    this.bossHealth = BOSS_MAX_HEALTH
+    this.battleOver = false
+    this.lastAttackTime = 0
+    this.invulnerableUntil = 0
+    this.facingRight = true
+    this.bossState = 'idle'
+    this.bossStateUntil = 0
+    this.bossAttackStart = 0
+    this.currentAttack = 'web'
+    this.nextAttack = 'web'
+
+    this.activeWeapon = WEAPONS[runState.weaponId ?? DEFAULT_WEAPON_ID]
 
     this.physics.world.setBounds(0, 0, width, height)
 
@@ -386,7 +399,6 @@ export class BattleScene extends Phaser.Scene {
     this.bossState = 'recovery'
     this.bossProjectiles.getChildren().forEach((child) => child.destroy())
     const message = won ? 'WIN' : 'LOSE'
-    console.log(message)
 
     const { width, height } = this.scale
     this.add
@@ -396,5 +408,8 @@ export class BattleScene extends Phaser.Scene {
         color: won ? '#4ecdc4' : '#ff6b6b',
       })
       .setOrigin(0.5)
+
+    setLastResult(won ? 'win' : 'lose')
+    this.time.delayedCall(900, () => this.scene.start('Result'))
   }
 }
