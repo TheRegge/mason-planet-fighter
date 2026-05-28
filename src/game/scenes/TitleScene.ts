@@ -25,6 +25,6 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
-    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('Battle'))
+    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('PlanetSelect'))
   }
 }

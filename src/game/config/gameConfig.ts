@@ -2,7 +2,10 @@ import * as Phaser from 'phaser'
 import { BootScene } from '../scenes/BootScene'
 import { PreloadScene } from '../scenes/PreloadScene'
 import { TitleScene } from '../scenes/TitleScene'
+import { PlanetSelectScene } from '../scenes/PlanetSelectScene'
+import { WeaponSelectScene } from '../scenes/WeaponSelectScene'
 import { BattleScene } from '../scenes/BattleScene'
+import { ResultScene } from '../scenes/ResultScene'
 
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -21,5 +24,13 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, PreloadScene, TitleScene, BattleScene],
+  scene: [
+    BootScene,
+    PreloadScene,
+    TitleScene,
+    PlanetSelectScene,
+    WeaponSelectScene,
+    BattleScene,
+    ResultScene,
+  ],
 }
