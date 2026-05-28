@@ -14,8 +14,7 @@ const ATTACK_FLASH_MS = 120
 const MELEE_HITBOX_HEIGHT = 30
 const PROJECTILE_LIFETIME_MS = 1500
 
-// Spider Prince (first real boss, graybox).
-const BOSS_COLOR = 0x6b2fbb
+// Spider Prince (first real boss).
 const TELEGRAPH_COLOR = 0xffe066
 const BOSS_WIDTH = 56
 const BOSS_HEIGHT = 64
@@ -37,7 +36,7 @@ type BossAttack = 'web' | 'leap'
 export class BattleScene extends Phaser.Scene {
   private playerRect!: Phaser.GameObjects.Rectangle
   private playerBody!: Phaser.Physics.Arcade.Body
-  private bossRect!: Phaser.GameObjects.Rectangle
+  private bossSprite!: Phaser.GameObjects.Sprite
   private bossBody!: Phaser.Physics.Arcade.Body
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
 
@@ -54,6 +53,8 @@ export class BattleScene extends Phaser.Scene {
 
   private activeWeapon!: WeaponConfig
   private projectiles!: Phaser.Physics.Arcade.Group
+  private heldWeapon?: Phaser.GameObjects.Image
+  private isAttacking = false
 
   // Spider Prince state machine.
   private bossState: BossState = 'idle'
@@ -79,6 +80,8 @@ export class BattleScene extends Phaser.Scene {
     this.lastAttackTime = 0
     this.invulnerableUntil = 0
     this.facingRight = true
+    this.isAttacking = false
+    this.heldWeapon = undefined
     this.bossState = 'idle'
     this.bossStateUntil = 0
     this.bossAttackStart = 0
@@ -113,30 +116,37 @@ export class BattleScene extends Phaser.Scene {
     this.playerBody.setSize(30, 50)
     this.playerBody.setCollideWorldBounds(true)
 
-    // Spider Prince (first real boss, graybox rectangle).
-    this.bossRect = this.add.rectangle(
+    // Spider Prince (first real boss).
+    this.bossSprite = this.add.sprite(
       width * 0.75,
       height - groundHeight - BOSS_HEIGHT / 2 - 10,
-      BOSS_WIDTH,
-      BOSS_HEIGHT,
-      BOSS_COLOR,
+      'spiderPrince',
     )
-    this.physics.add.existing(this.bossRect)
-    this.bossBody = this.bossRect.body as Phaser.Physics.Arcade.Body
+    this.bossSprite.setDisplaySize(BOSS_WIDTH, BOSS_HEIGHT)
+    this.physics.add.existing(this.bossSprite)
+    this.bossBody = this.bossSprite.body as Phaser.Physics.Arcade.Body
     this.bossBody.setSize(BOSS_WIDTH, BOSS_HEIGHT)
     this.bossBody.setCollideWorldBounds(true)
     this.enterBossState('idle')
 
     // Physics relations.
     this.physics.add.collider(this.playerRect, ground)
-    this.physics.add.collider(this.bossRect, ground)
-    this.physics.add.overlap(this.playerRect, this.bossRect, () => this.onContact())
+    this.physics.add.collider(this.bossSprite, ground)
+    this.physics.add.overlap(this.playerRect, this.bossSprite, () => this.onContact())
+
+    // Held weapon (visible for melee/heavy; projectile weapons are thrown, not held).
+    if (this.activeWeapon.type !== 'projectile') {
+      this.heldWeapon = this.add.image(0, 0, this.activeWeapon.id)
+      this.heldWeapon.setDisplaySize(36, 36)
+      this.heldWeapon.setOrigin(0.2, 0.7)
+      this.updateHeldWeaponPose()
+    }
 
     // Projectiles (used by ranged weapons).
     // Note: Phaser's overlap callback is invoked as (sprite, groupMember) regardless
     // of argument order to add.overlap, so the projectile is the SECOND argument.
     this.projectiles = this.physics.add.group({ allowGravity: false })
-    this.physics.add.overlap(this.projectiles, this.bossRect, (_boss, projObj) => {
+    this.physics.add.overlap(this.projectiles, this.bossSprite, (_boss, projObj) => {
       (projObj as Phaser.GameObjects.GameObject).destroy()
       this.damageBoss(this.activeWeapon.damage)
     })
@@ -209,6 +219,18 @@ export class BattleScene extends Phaser.Scene {
       this.performAttack()
       this.lastAttackTime = this.time.now
     }
+
+    if (this.heldWeapon && !this.isAttacking) {
+      this.updateHeldWeaponPose()
+    }
+  }
+
+  private updateHeldWeaponPose(): void {
+    if (!this.heldWeapon) return
+    const offsetX = this.facingRight ? 10 : -10
+    this.heldWeapon.setPosition(this.playerRect.x + offsetX, this.playerRect.y + 4)
+    this.heldWeapon.setFlipX(!this.facingRight)
+    this.heldWeapon.setAngle(this.facingRight ? -20 : 20)
   }
 
   private performAttack(): void {
@@ -223,31 +245,51 @@ export class BattleScene extends Phaser.Scene {
     const w = this.activeWeapon
     const x = this.playerRect.x + (this.facingRight ? w.range : -w.range)
     const y = this.playerRect.y
-    const hitbox = this.add.rectangle(x, y, w.range, MELEE_HITBOX_HEIGHT, w.color, 0.7)
 
+    const hitbox = new Phaser.Geom.Rectangle(
+      x - w.range / 2,
+      y - MELEE_HITBOX_HEIGHT / 2,
+      w.range,
+      MELEE_HITBOX_HEIGHT,
+    )
     if (
       Phaser.Geom.Intersects.RectangleToRectangle(
-        hitbox.getBounds(),
-        this.bossRect.getBounds(),
+        hitbox,
+        this.bossSprite.getBounds(),
       )
     ) {
       this.damageBoss(w.damage)
     }
 
-    this.time.delayedCall(ATTACK_FLASH_MS, () => hitbox.destroy())
+    if (!this.heldWeapon) return
+
+    this.isAttacking = true
+    const restX = this.playerRect.x + (this.facingRight ? 10 : -10)
+    const restAngle = this.facingRight ? -20 : 20
+    this.tweens.add({
+      targets: this.heldWeapon,
+      x: { from: restX, to: x },
+      angle: { from: restAngle, to: 0 },
+      duration: ATTACK_FLASH_MS,
+      ease: Phaser.Math.Easing.Quadratic.Out,
+      yoyo: true,
+      onComplete: () => {
+        this.isAttacking = false
+        this.updateHeldWeaponPose()
+      },
+    })
   }
 
   private spawnProjectile(): void {
     const w = this.activeWeapon
     const speed = w.projectileSpeed ?? 0
     const offsetX = this.facingRight ? w.range : -w.range
-    const proj = this.add.rectangle(
+    const proj = this.add.image(
       this.playerRect.x + offsetX,
       this.playerRect.y,
-      w.range,
-      w.range,
-      w.color,
+      w.id,
     )
+    proj.setDisplaySize(32, 32)
     this.physics.add.existing(proj)
     // Add to the group BEFORE setting velocity — Phaser's Arcade Group applies
     // its `defaults` (including velocityX/Y = 0) to the body on add, which would
@@ -344,19 +386,19 @@ export class BattleScene extends Phaser.Scene {
     const now = this.time.now
     switch (state) {
       case 'idle':
-        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossSprite.clearTint()
         this.bossStateUntil = now + BOSS_IDLE_MS
         break
       case 'telegraph':
-        this.bossRect.setFillStyle(TELEGRAPH_COLOR)
+        this.bossSprite.setTint(TELEGRAPH_COLOR)
         this.bossStateUntil = now + BOSS_TELEGRAPH_MS
         break
       case 'attack':
-        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossSprite.clearTint()
         this.bossAttackStart = now
         break
       case 'recovery':
-        this.bossRect.setFillStyle(BOSS_COLOR)
+        this.bossSprite.clearTint()
         this.bossStateUntil = now + BOSS_RECOVERY_MS
         break
     }
@@ -372,9 +414,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnWeb(): void {
-    const dir = this.playerRect.x < this.bossRect.x ? -1 : 1
-    const spawnX = this.bossRect.x + dir * (BOSS_WIDTH / 2 + WEB_SIZE / 2 + 2)
-    const web = this.add.rectangle(spawnX, this.bossRect.y, WEB_SIZE, WEB_SIZE, WEB_COLOR)
+    const dir = this.playerRect.x < this.bossSprite.x ? -1 : 1
+    const spawnX = this.bossSprite.x + dir * (BOSS_WIDTH / 2 + WEB_SIZE / 2 + 2)
+    const web = this.add.rectangle(spawnX, this.bossSprite.y, WEB_SIZE, WEB_SIZE, WEB_COLOR)
     this.physics.add.existing(web)
     // Add to group BEFORE setting velocity (group defaults would clobber it).
     this.bossProjectiles.add(web)
@@ -388,7 +430,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private doLeap(): void {
-    const dir = this.playerRect.x < this.bossRect.x ? -1 : 1
+    const dir = this.playerRect.x < this.bossSprite.x ? -1 : 1
     this.bossBody.setVelocity(dir * BOSS_LEAP_VX, BOSS_LEAP_VY)
   }
 
